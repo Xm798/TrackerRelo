@@ -7,6 +7,12 @@ edition = "2021"
 name = "tracker_relo_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+opt-level = "s"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
