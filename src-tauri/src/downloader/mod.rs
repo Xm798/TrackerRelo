@@ -48,7 +48,12 @@ impl DownloaderKind {
         }
     }
 
-    pub async fn replace_tracker(&self, hash: &str, old_url: &str, new_url: &str) -> Result<(), String> {
+    pub async fn replace_tracker(
+        &self,
+        hash: &str,
+        old_url: &str,
+        new_url: &str,
+    ) -> Result<(), String> {
         match self {
             Self::QBittorrent(d) => d.replace_tracker(hash, old_url, new_url).await,
             Self::Transmission(d) => d.replace_tracker(hash, old_url, new_url).await,

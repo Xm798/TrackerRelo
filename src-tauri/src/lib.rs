@@ -1,6 +1,6 @@
 mod commands;
-mod downloader;
 mod config;
+mod downloader;
 
 use tauri::{LogicalUnit, Manager, PixelUnit, WindowSizeConstraints};
 

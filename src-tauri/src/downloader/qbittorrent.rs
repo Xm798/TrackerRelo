@@ -21,7 +21,13 @@ struct QBTracker {
 }
 
 impl QBittorrent {
-    pub async fn new(host: &str, port: u16, username: &str, password: &str, use_https: bool) -> Result<Self, String> {
+    pub async fn new(
+        host: &str,
+        port: u16,
+        username: &str,
+        password: &str,
+        use_https: bool,
+    ) -> Result<Self, String> {
         let scheme = if use_https { "https" } else { "http" };
         let base_url = format!("{}://{}:{}", scheme, host, port);
         let client = Client::builder()
@@ -112,11 +118,7 @@ impl QBittorrent {
         let resp = self
             .client
             .post(format!("{}/api/v2/torrents/editTracker", self.base_url))
-            .form(&[
-                ("hash", hash),
-                ("origUrl", old_url),
-                ("newUrl", new_url),
-            ])
+            .form(&[("hash", hash), ("origUrl", old_url), ("newUrl", new_url)])
             .send()
             .await
             .map_err(|e| e.to_string())?;
