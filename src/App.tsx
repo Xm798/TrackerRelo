@@ -1,5 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
+import { check, type Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import {
   Card,
   CardContent,
@@ -41,6 +44,7 @@ import {
   ChevronRight,
   Lock,
   List,
+  ArrowDownToLine,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -126,6 +130,12 @@ function App() {
   // -- Execution state
   const [isExecuting, setIsExecuting] = useState(false);
 
+  // -- Updater state
+  const [appVersion, setAppVersion] = useState("");
+  const [updateAvailable, setUpdateAvailable] = useState<Update | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const updateChecked = useRef(false);
+
   // -- Tracker browser state
   const [existingTrackers, setExistingTrackers] = useState<TrackerEntry[]>([]);
   const [isFetchingTrackers, setIsFetchingTrackers] = useState(false);
@@ -142,6 +152,28 @@ function App() {
         // Use defaults if load fails
       });
   }, []);
+
+  // -- Fetch version and check for updates on mount
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => {});
+    if (updateChecked.current) return;
+    updateChecked.current = true;
+    check().then((update) => {
+      if (update?.available) setUpdateAvailable(update);
+    }).catch(() => {});
+  }, []);
+
+  // -- Handle update install
+  const handleUpdate = async () => {
+    if (!updateAvailable) return;
+    setIsUpdating(true);
+    try {
+      await updateAvailable.downloadAndInstall();
+      await relaunch();
+    } catch {
+      setIsUpdating(false);
+    }
+  };
 
   // -- Persist config helper
   const buildConfig = useCallback(
@@ -304,8 +336,22 @@ function App() {
             TrackerRelo
           </span>
           <span className="text-xs text-muted-foreground" data-tauri-drag-region>
-            v0.1.0
+            {appVersion ? `v${appVersion}` : ""}
           </span>
+          {updateAvailable && (
+            <button
+              onClick={handleUpdate}
+              disabled={isUpdating}
+              className="flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700 transition-colors hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-400 dark:hover:bg-blue-900"
+            >
+              {isUpdating ? (
+                <Loader2 className="size-2.5 animate-spin" />
+              ) : (
+                <ArrowDownToLine className="size-2.5" />
+              )}
+              {isUpdating ? "Updating..." : `v${updateAvailable.version}`}
+            </button>
+          )}
         </div>
       </div>
 
