@@ -1,23 +1,12 @@
+use qbit_rs::model::{Credential, GetTorrentListArg};
+use qbit_rs::Qbit;
 use reqwest::Client;
-use serde::Deserialize;
+use url::Url;
 
 use super::{TorrentInfo, TrackerInfo};
 
 pub struct QBittorrent {
-    base_url: String,
-    client: Client,
-}
-
-#[derive(Deserialize)]
-struct QBTorrent {
-    hash: String,
-    name: String,
-}
-
-#[derive(Deserialize)]
-struct QBTracker {
-    url: String,
-    status: i32,
+    api: Qbit,
 }
 
 impl QBittorrent {
@@ -31,6 +20,7 @@ impl QBittorrent {
         let scheme = if use_https { "https" } else { "http" };
         let base_url = format!("{}://{}:{}", scheme, host, port);
         log::debug!("qBittorrent base URL: {}", base_url);
+
         let client = Client::builder()
             .cookie_store(true)
             .danger_accept_invalid_certs(use_https)
@@ -42,48 +32,33 @@ impl QBittorrent {
                 e.to_string()
             })?;
 
-        let resp = client
-            .post(format!("{}/api/v2/auth/login", base_url))
-            .form(&[("username", username), ("password", password)])
-            .send()
-            .await
-            .map_err(|e| {
-                log::error!("qBittorrent connection failed: {}", e);
-                format!("Connection failed: {}", e)
-            })?;
+        let credential = Credential::new(username, password);
+        let api = Qbit::new_with_client(base_url.as_str(), credential, client);
 
-        let text = resp.text().await.map_err(|e| e.to_string())?;
-        if text.trim() != "Ok." {
-            log::warn!("qBittorrent login rejected: {}", text.trim());
-            return Err(format!("Login failed: {}", text));
-        }
+        api.login(false).await.map_err(|e| {
+            log::error!("qBittorrent login failed: {}", e);
+            format!("Login failed: {}", e)
+        })?;
 
         log::info!("qBittorrent auth successful");
-        Ok(Self { base_url, client })
+        Ok(Self { api })
     }
 }
 
 impl QBittorrent {
     pub async fn test_connection(&self) -> Result<String, String> {
-        let resp = self
-            .client
-            .get(format!("{}/api/v2/app/version", self.base_url))
-            .send()
-            .await
-            .map_err(|e| format!("Connection failed: {}", e))?;
-        let version = resp.text().await.map_err(|e| e.to_string())?;
-        log::info!("qBittorrent version: {}", version.trim());
+        let version = self.api.get_version().await.map_err(|e| {
+            log::error!("Failed to get qBittorrent version: {}", e);
+            format!("Connection failed: {}", e)
+        })?;
+        log::info!("qBittorrent version: {}", version);
         Ok(format!("qBittorrent {}", version))
     }
 
     pub async fn list_torrents(&self) -> Result<Vec<TorrentInfo>, String> {
-        let torrents: Vec<QBTorrent> = self
-            .client
-            .get(format!("{}/api/v2/torrents/info", self.base_url))
-            .send()
-            .await
-            .map_err(|e| e.to_string())?
-            .json()
+        let torrents = self
+            .api
+            .get_torrent_list(GetTorrentListArg::default())
             .await
             .map_err(|e| e.to_string())?;
 
@@ -91,14 +66,18 @@ impl QBittorrent {
 
         let mut result = Vec::new();
         for t in torrents {
-            let trackers: Vec<QBTracker> = self
-                .client
-                .get(format!("{}/api/v2/torrents/trackers", self.base_url))
-                .query(&[("hash", &t.hash)])
-                .send()
-                .await
-                .map_err(|e| e.to_string())?
-                .json()
+            let hash = match &t.hash {
+                Some(h) => h.clone(),
+                None => {
+                    log::warn!("Skipping torrent with no hash");
+                    continue;
+                }
+            };
+            let name = t.name.clone().unwrap_or_default();
+
+            let trackers = self
+                .api
+                .get_torrent_trackers(&hash)
                 .await
                 .map_err(|e| e.to_string())?;
 
@@ -107,13 +86,13 @@ impl QBittorrent {
                 .filter(|tr| tr.url.starts_with("http") || tr.url.starts_with("udp"))
                 .map(|tr| TrackerInfo {
                     url: tr.url,
-                    status: tr.status,
+                    status: tr.status as i32,
                 })
                 .collect();
 
             result.push(TorrentInfo {
-                hash: t.hash,
-                name: t.name,
+                hash,
+                name,
                 trackers: tracker_infos,
             });
         }
@@ -128,19 +107,23 @@ impl QBittorrent {
         new_url: &str,
     ) -> Result<(), String> {
         log::debug!("Replacing tracker for hash={}", hash);
-        let resp = self
-            .client
-            .post(format!("{}/api/v2/torrents/editTracker", self.base_url))
-            .form(&[("hash", hash), ("origUrl", old_url), ("newUrl", new_url)])
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
 
-        if !resp.status().is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            log::error!("Edit tracker failed for hash={}: {}", hash, text);
-            return Err(format!("Edit tracker failed: {}", text));
-        }
+        let orig_url: Url = old_url.parse().map_err(|e| {
+            log::error!("Invalid original tracker URL '{}': {}", old_url, e);
+            format!("Invalid original URL: {}", e)
+        })?;
+        let new_url: Url = new_url.parse().map_err(|e| {
+            log::error!("Invalid new tracker URL '{}': {}", new_url, e);
+            format!("Invalid new URL: {}", e)
+        })?;
+
+        self.api
+            .edit_trackers(hash, orig_url, new_url)
+            .await
+            .map_err(|e| {
+                log::error!("Edit tracker failed for hash={}: {}", hash, e);
+                e.to_string()
+            })?;
 
         Ok(())
     }
