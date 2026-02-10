@@ -7,11 +7,6 @@ on:
       - master
     tags:
       - "v*"
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - LICENSE
-      - .gitignore
   pull_request:
     branches:
       - main
@@ -113,4 +108,11 @@ jobs:
         with:
           draft: true
           body: "See the assets below to download for your platform."
-          files: artifacts/*/*
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.app.tar.gz
+            artifacts/**/*.deb
+            artifacts/**/*.rpm
+            artifacts/**/*.AppImage
+            artifacts/**/*.exe
+            artifacts/**/*.msi
