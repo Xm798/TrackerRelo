@@ -7,10 +7,20 @@ on:
       - master
     tags:
       - "v*"
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - LICENSE
+      - .gitignore
   pull_request:
     branches:
       - main
       - master
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - LICENSE
+      - .gitignore
   workflow_dispatch:
 
 concurrency:
